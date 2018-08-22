@@ -29,9 +29,6 @@ type Field struct {
 	F        reflect.StructField `json:"-"`
 	V        reflect.Value       `json:"-"`
 	Name     string              `json:"name"`
-	DBType   string              `json:"dbtype"`
-	DBValue  string              `json:"dbvalue"`
-	DBIndex  string              `json:"dbindex"`
 	IsObject bool                `json:"-"`
 }
 

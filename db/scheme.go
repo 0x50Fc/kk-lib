@@ -2,200 +2,199 @@ package db
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 
 	"github.com/hailongz/kk-lib/dynamic"
 )
 
-type IScheme interface {
-	Open(db Database) error
-	InstallSQL(db Database, object IObject, prefix string, autoIncrement int64) (string, error)
-	Install(db Database, object IObject, prefix string, autoIncrement int64) error
-}
-
-type Scheme struct {
-}
-
-func NewScheme() IScheme {
-	v := Scheme{}
-	return &v
-}
-
-func (S *Scheme) Open(db Database) error {
-	_, err := db.Exec("CREATE TABLE IF NOT EXISTS __kk_go_scheme (id BIGINT NOT NULL AUTO_INCREMENT,name VARCHAR(64) NULL,scheme TEXT NULL,PRIMARY KEY (id),INDEX name (name ASC) ) AUTO_INCREMENT=1;")
-	return err
-}
-
-func (S *Scheme) InstallSQL(db Database, object IObject, prefix string, autoIncrement int64) (string, error) {
-
-	var tbname = prefix + object.GetName()
-
-	var rs, err = db.Query("SELECT * FROM __kk_go_scheme WHERE name=?", tbname)
-
-	if err != nil {
-		return "", err
-	}
-
-	defer rs.Close()
+func fieldSQLType(stype string, length int64, defaultValue string) string {
 
 	b := bytes.NewBuffer(nil)
 
-	if rs.Next() {
+	switch stype {
+	case "int":
+		if length > 0 {
+			b.WriteString(fmt.Sprintf("INT(%d)", length))
+		} else {
+			b.WriteString("INT")
+		}
+		b.WriteString(" DEFAULT ")
+		b.WriteString(dynamic.StringValue(dynamic.IntValue(defaultValue, 0), "0"))
+		break
+	case "long":
+		if length > 0 {
+			b.WriteString(fmt.Sprintf("BIGINT(%d)", length))
+		} else {
+			b.WriteString("BIGINT")
+		}
+		b.WriteString(" DEFAULT ")
+		b.WriteString(dynamic.StringValue(dynamic.IntValue(defaultValue, 0), "0"))
+		break
+	case "double":
+		if length > 0 {
+			b.WriteString(fmt.Sprintf("DOUBLE(%d)", length))
+		} else {
+			b.WriteString("DOUBLE")
+		}
+		b.WriteString(" DEFAULT ")
+		b.WriteString(dynamic.StringValue(dynamic.IntValue(defaultValue, 0), "0"))
+		break
+	case "boolean":
+		if length > 0 {
+			b.WriteString(fmt.Sprintf("DOUBLE(%d)", length))
+		} else {
+			b.WriteString("DOUBLE")
+		}
+		b.WriteString(" DEFAULT ")
+		if dynamic.BooleanValue(defaultValue, false) {
+			b.WriteString("0")
+		} else {
+			b.WriteString("1")
+		}
+		break
+	case "string":
+		if length == 0 {
+			b.WriteString("VARCHAR(64)")
+			b.WriteString(" DEFAULT ")
+			b.WriteString(fmt.Sprintf("'%s'", dynamic.StringValue(defaultValue, "")))
+		} else if length > 65535 {
+			b.WriteString(fmt.Sprintf("LONGTEXT(%d)", length))
+		} else if length > 4096 {
+			b.WriteString(fmt.Sprintf("TEXT(%d)", length))
+		} else if length == -1 {
+			b.WriteString("TEXT")
+		} else if length == -2 {
+			b.WriteString("LONGTEXT")
+		} else {
+			b.WriteString(fmt.Sprintf("VARCHAR(%d)", length))
+			b.WriteString(" DEFAULT ")
+			b.WriteString(fmt.Sprintf("'%s'", dynamic.StringValue(defaultValue, "")))
+		}
+	default:
+		if length == 0 {
+			b.WriteString("TEXT")
+		} else {
+			b.WriteString(fmt.Sprintf("TEXT(%d)", length))
+		}
+	}
 
-		var id int64
-		var name string
-		var scheme string
-		rs.Scan(&id, &name, &scheme)
-		var tb interface{} = nil
-		json.Unmarshal([]byte(scheme), &tb)
-		var table = map[string]Field{}
+	return b.String()
+}
 
-		Each(object, func(field Field) bool {
+func InstallSQL(table interface{}, prefix string, autoIncrement int64, ver interface{}) (string, interface{}) {
 
-			if field.Name == "id" {
-				return true
-			}
+	tbname := prefix + dynamic.StringValue(dynamic.Get(table, "name"), "")
+	tbtitle := dynamic.StringValue(dynamic.Get(table, "title"), "")
 
-			fd := dynamic.Get(tb, field.Name)
+	b := bytes.NewBuffer(nil)
 
-			if fd == nil {
-				b.WriteString(fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s %s;", tbname, field.Name, field.DBType, field.DBValue))
-			} else if dynamic.StringValue(dynamic.Get(fd, "dbtype"), "") != field.DBType ||
-				dynamic.StringValue(dynamic.Get(fd, "dbvalue"), "") != field.DBValue {
-				b.WriteString(fmt.Sprintf("ALTER TABLE `%s` CHANGE `%s` `%s` %s %s;", tbname, field.Name, field.Name, field.DBType, field.DBValue))
-			}
-
-			if field.DBIndex != "" && dynamic.StringValue(dynamic.Get(fd, "dbindex"), "") == "" {
-				b.WriteString(fmt.Sprintf("CREATE INDEX `%s` ON `%s` (`%s` %s);", field.Name, tbname, field.Name, field.DBIndex))
-			}
-
-			table[field.Name] = field
-
-			return true
-		})
-
-	} else {
+	if ver == nil {
 
 		var i int = 0
 
+		b.WriteString(fmt.Sprintf("--%s\r\n", tbtitle))
 		b.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS `%s` (", tbname))
 
-		b.WriteString("id BIGINT NOT NULL AUTO_INCREMENT")
+		b.WriteString("\r\n\tid BIGINT NOT NULL AUTO_INCREMENT")
+		b.WriteString("\t--ID\r\n")
 
 		i += 1
 
-		indexs := []Field{}
-		var table = map[string]Field{}
+		indexs := []interface{}{}
 
-		Each(object, func(field Field) bool {
+		var tb = map[string]interface{}{}
 
-			if field.Name == "id" {
-				return true
-			}
+		dynamic.Each(dynamic.Get(table, "fields"), func(key interface{}, field interface{}) bool {
 
-			if field.DBIndex != "" {
+			name := dynamic.StringValue(dynamic.Get(field, "name"), "")
+			stype := dynamic.StringValue(dynamic.Get(field, "type"), "")
+			length := dynamic.IntValue(dynamic.Get(field, "length"), 0)
+			index := dynamic.StringValue(dynamic.Get(field, "index"), "")
+			title := dynamic.StringValue(dynamic.Get(field, "title"), "")
+			defaultValue := dynamic.StringValue(dynamic.Get(field, "default"), "")
+
+			if index != "" {
 				indexs = append(indexs, field)
 			}
 
 			if i != 0 {
-				b.WriteString(",")
+				b.WriteString("\t,")
 			}
 
-			b.WriteString(fmt.Sprintf("`%s` %s %s", field.Name, field.DBType, field.DBValue))
-
+			b.WriteString(fmt.Sprintf("`%s` %s", name, fieldSQLType(stype, length, defaultValue)))
+			b.WriteString(fmt.Sprintf("\t--[字段] %s\r\n", title))
 			i = i + 1
 
-			table[field.Name] = field
+			tb[name] = field
 
 			return true
 		})
 
-		b.WriteString(", PRIMARY KEY(id) ")
+		b.WriteString("\t, PRIMARY KEY(id) \r\n")
 
-		for _, index := range indexs {
-			b.WriteString(fmt.Sprintf(",INDEX `%s` (`%s` %s)", index.Name, index.Name, index.DBIndex))
+		for _, field := range indexs {
+			name := dynamic.StringValue(dynamic.Get(field, "name"), "")
+			index := dynamic.StringValue(dynamic.Get(field, "index"), "")
+			title := dynamic.StringValue(dynamic.Get(field, "title"), "")
+			b.WriteString(fmt.Sprintf("\t,INDEX `%s` (`%s` %s)", name, name, index))
+			b.WriteString(fmt.Sprintf("\t--[索引] %s\r\n", title))
 		}
 
 		if autoIncrement < 1 {
-			b.WriteString(" ) ;")
+			b.WriteString(" ) ;\r\n")
 		} else {
-			b.WriteString(fmt.Sprintf(" ) AUTO_INCREMENT = %d;", autoIncrement))
+			b.WriteString(fmt.Sprintf(" ) AUTO_INCREMENT = %d;\r\n", autoIncrement))
 		}
 
-	}
+		return b.String(), tb
 
-	return b.String(), nil
+	} else {
 
-}
+		var tb = map[string]interface{}{}
 
-func (S *Scheme) Install(db Database, object IObject, prefix string, autoIncrement int64) error {
+		dynamic.Each(dynamic.Get(table, "fields"), func(key interface{}, field interface{}) bool {
 
-	sql, err := S.InstallSQL(db, object, prefix, autoIncrement)
+			name := dynamic.StringValue(dynamic.Get(field, "name"), "")
+			stype := dynamic.StringValue(dynamic.Get(field, "type"), "")
+			length := dynamic.IntValue(dynamic.Get(field, "length"), 0)
+			index := dynamic.StringValue(dynamic.Get(field, "index"), "")
+			title := dynamic.StringValue(dynamic.Get(field, "title"), "")
+			defaultValue := dynamic.StringValue(dynamic.Get(field, "default"), "")
 
-	if err != nil {
-		return err
-	}
+			fd := dynamic.Get(ver, name)
 
-	if sql == "" {
-		return nil
-	}
-
-	_, err = db.Exec(sql)
-
-	if err != nil {
-
-		var table = map[string]Field{}
-
-		Each(object, func(field Field) bool {
-
-			if field.Name == "id" {
-				return true
+			if fd == nil {
+				b.WriteString(fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s;", tbname, name, fieldSQLType(stype, length, defaultValue)))
+				b.WriteString(fmt.Sprintf("\t--[增加字段] %s\r\n", title))
+			} else if dynamic.StringValue(dynamic.Get(fd, "type"), "") != stype ||
+				dynamic.IntValue(dynamic.Get(fd, "length"), 0) != length {
+				b.WriteString(fmt.Sprintf("ALTER TABLE `%s` CHANGE `%s` `%s` %s;", tbname, name, name, fieldSQLType(stype, length, defaultValue)))
+				b.WriteString(fmt.Sprintf("\t--[修改字段] %s\r\n", title))
 			}
 
-			table[field.Name] = field
+			if index != "" && dynamic.StringValue(dynamic.Get(fd, "index"), "") == "" {
+				b.WriteString(fmt.Sprintf("CREATE INDEX `%s` ON `%s` (`%s` %s);", name, tbname, name, index))
+				b.WriteString(fmt.Sprintf("\t--[创建索引] %s\r\n", title))
+			}
+
+			tb[name] = field
 
 			return true
 		})
 
-		var tbname = prefix + object.GetName()
+		return b.String(), tb
+	}
+}
 
-		rs, err := db.Query("SELECT id FROM __kk_go_scheme WHERE name=?", tbname)
+func Install(db Database, object IObject, prefix string, autoIncrement int64, table interface{}) (error, interface{}) {
 
-		if err != nil {
-			return err
-		}
+	sql, tb := InstallSQL(object, prefix, autoIncrement, table)
 
-		defer rs.Close()
-
-		if rs.Next() {
-
-			var id int64
-
-			err = rs.Scan(&id)
-
-			if err != nil {
-				return err
-			}
-
-			var b, _ = json.Marshal(table)
-			_, err = db.Exec("UPDATE __kk_go_scheme SET scheme=? WHERE id=?", string(b), id)
-			if err != nil {
-				return err
-			}
-		} else {
-
-			var b, _ = json.Marshal(table)
-
-			_, err = db.Exec("INSERT INTO __kk_go_scheme(name,scheme) VALUES(?,?)", tbname, string(b))
-
-			if err != nil {
-				return err
-			}
-		}
-
-		return err
+	if sql == "" {
+		return nil, tb
 	}
 
-	return nil
+	_, err := db.Exec(sql)
+
+	return err, tb
 }

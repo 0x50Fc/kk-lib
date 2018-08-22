@@ -1,10 +1,10 @@
 package duktape
 
 import (
+	"sync"
 	"unsafe"
 	"fmt"
 	"errors"
-	"log"
 )
 
 /*
@@ -19,27 +19,57 @@ extern duk_ret_t go_FunctionCall(duk_context * ctx);
 */
 import "C"
 
+type GoFunction func() int
 type Context *C.struct_Context
+
+type ObjectRecycle interface {
+	Recycle()
+}
 
 type Scope struct {
 	objects map[string]interface{}
 	autoId uint64
+	lock sync.Mutex
 }
 
 func NewScope() *Scope {
-	return &Scope{map[string]interface{}{},0}
+	v := Scope{}
+	v.objects = map[string]interface{}{}
+	v.autoId = 0;
+	return &v
 }
 
-func (O *Scope) newObject(object interface{}) string {
-	iid := O.autoId + 1
-	O.autoId = iid
+func (S *Scope) getObject(id string) interface{} {
+	S.lock.Lock()
+	defer S.lock.Unlock()
+	v ,ok := S.objects[id]
+	if ok {
+		return v
+	}
+	return nil
+}
+
+func (S *Scope) newObject(object interface{}) string {
+	S.lock.Lock()
+	defer S.lock.Unlock()
+	iid := S.autoId + 1
+	S.autoId = iid
 	id := fmt.Sprintf("%d",iid)
- 	O.objects[id] = object
+	S.objects[id] = object
 	return id
 }
 
-func (O *Scope) removeObject(id string) {
-	delete(O.objects,id)
+func (S *Scope) removeObject(id string) {
+	S.lock.Lock()
+	defer S.lock.Unlock()
+	v ,ok := S.objects[id]
+	if ok {
+		r,ok := v.(ObjectRecycle)
+		if ok {
+			r.Recycle()
+		}
+		delete(S.objects,id)
+	}
 }
 
 
@@ -48,13 +78,6 @@ func New(scope *Scope) Context {
 	ctx := C.NewContext()
 	ctx.scope = unsafe.Pointer(scope)
 
-	C.duk_push_global_object(ctx.ctx);
-	key := C.CString("__Scope");
-	C.duk_push_string(ctx.ctx,key);
-	C.duk_push_pointer(ctx.ctx,nil)
-	C.duk_put_prop(ctx.ctx,C.duk_idx_t(-3));
-	C.duk_pop(ctx.ctx);
-	C.free(unsafe.Pointer(key))
 	return ctx
 }
 
@@ -145,11 +168,11 @@ func PushGoObject(ctx Context,object interface{}) {
 	PushString(ctx,id)
 	C.duk_put_prop(ctx.ctx,-3)
 	
-	C.duk_push_c_function(ctx.ctx,C.duk_c_function(C.go_ObjectDealloc),C.DUK_VARARGS);
+	C.duk_push_c_function(ctx.ctx,C.duk_c_function(C.go_ObjectDealloc),C.duk_idx_t(1));
 	C.duk_set_finalizer(ctx.ctx,-2)
 }
 
-func  PushGoFunction(ctx Context,fn func() int) {
+func  PushGoFunction(ctx Context,fn GoFunction) {
 
 	if(fn == nil) {
 		C.duk_push_undefined(ctx.ctx)
@@ -170,7 +193,7 @@ func  PushGoFunction(ctx Context,fn func() int) {
 	PushString(ctx,id)
 	C.duk_put_prop(ctx.ctx,-3)
 
-	C.duk_push_c_function(ctx.ctx,C.duk_c_function(C.go_ObjectDealloc),C.DUK_VARARGS);
+	C.duk_push_c_function(ctx.ctx,C.duk_c_function(C.go_ObjectDealloc),C.duk_idx_t(1));
 	C.duk_set_finalizer(ctx.ctx,-2)
 }
 
@@ -237,10 +260,7 @@ func  ToGoObject(ctx Context,idx int) interface{} {
 
 		id := ToString(ctx,-1)
 		Pop(ctx,1)
-		v ,ok := scope.objects[id]
-		if ok {
-			return v
-		}
+		return scope.getObject(id);
 	}
 
 	Pop(ctx,1)
@@ -482,6 +502,10 @@ func PushThis(ctx Context) {
 	C.duk_push_this(ctx.ctx);
 }
 
+func SetPrototype(ctx Context,idx int) {
+	C.duk_set_prototype(ctx.ctx,C.duk_idx_t(idx));
+}
+
 //export go_ObjectDealloc
 func go_ObjectDealloc(ctx * C.duk_context) C.duk_ret_t {
 
@@ -492,19 +516,23 @@ func go_ObjectDealloc(ctx * C.duk_context) C.duk_ret_t {
 		key := C.CString("__id");
 
 		C.duk_push_string(ctx,key)
+
+		C.free(unsafe.Pointer(key))
+
 		C.duk_get_prop(ctx,-2)
 
 		if C.duk_is_string(ctx,-1) != C.duk_bool_t(0) {
+
 			id := C.duk_to_string(ctx,-1)
+
 			if id != nil {
-				scope.removeObject(C.GoString(id))
-				log.Println("[DEALLOC]",id)
+				iid := C.GoString(id);
+				scope.removeObject(iid)
 			}
+
 		}
 
 		C.duk_pop(ctx);
-
-		C.free(unsafe.Pointer(key))
 		
 	}
 	
@@ -519,7 +547,8 @@ func go_FunctionCall(ctx * C.duk_context) C.duk_ret_t {
 
 	if scope != nil {
 
-		var fn func() int = nil
+
+		var fn GoFunction = nil
 
 		C.duk_push_current_function(ctx);
 
@@ -527,26 +556,30 @@ func go_FunctionCall(ctx * C.duk_context) C.duk_ret_t {
 
 		C.duk_push_string(ctx,key)
 
+		C.free(unsafe.Pointer(key))
+
 		C.duk_get_prop(ctx,-2)
+
 
 		if C.duk_is_string(ctx,-1) != C.duk_bool_t(0) {
 			id := C.duk_to_string(ctx,-1)
 			if id != nil {
-				var vfn interface{} = scope.objects[C.GoString(id)]
+				iid := C.GoString(id)
+				vfn := scope.getObject(iid)
 				if vfn != nil {
-					fn = vfn.(func() int)
+					fn,_ = vfn.(GoFunction)
 				}
 			}
 		} 
 
 		C.duk_pop_n(ctx,2);
-
-		C.free(unsafe.Pointer(key))
 		
+
 		if fn != nil {
 			n := fn()
 			return C.duk_ret_t(n)
 		}
+
 	}
 
 	return C.duk_ret_t(0)

@@ -1,11 +1,8 @@
 package db
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
-
-	"github.com/hailongz/kk-lib/dynamic"
 )
 
 func each(v reflect.Value, keys map[string]bool, fn func(field Field) bool) bool {
@@ -47,74 +44,21 @@ func each(v reflect.Value, keys map[string]bool, fn func(field Field) bool) bool
 			continue
 		}
 
-		fd.IsObject = false
-		fd.DBValue = ""
-		fd.DBIndex = fd.F.Tag.Get("index")
-		length := dynamic.IntValue(fd.F.Tag.Get("length"), 0)
-
 		keys[fd.Name] = true
 
 		switch fd.F.Type.Kind() {
 		case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint:
-			if length != 0 {
-				fd.DBType = fmt.Sprintf("INT(%d)", length)
-			} else {
-				fd.DBType = "INT"
-			}
-			fd.DBValue = dynamic.StringValue(dynamic.IntValue(fd.F.Tag.Get("default"), 0), "0")
+			fd.IsObject = false
 		case reflect.Int64, reflect.Uint64:
-			if length != 0 {
-				fd.DBType = fmt.Sprintf("BIGINT(%d)", length)
-			} else {
-				fd.DBType = "BIGINT"
-			}
-			fd.DBValue = dynamic.StringValue(dynamic.IntValue(fd.F.Tag.Get("default"), 0), "0")
+			fd.IsObject = false
 		case reflect.Float32, reflect.Float64:
-			if length != 0 {
-				fd.DBType = fmt.Sprintf("DOUBLE(%d)", length)
-			} else {
-				fd.DBType = "DOUBLE"
-			}
-			fd.DBValue = dynamic.StringValue(dynamic.FloatValue(fd.F.Tag.Get("default"), 0), "0")
+			fd.IsObject = false
 		case reflect.Bool:
-			fd.DBType = "INT(1)"
-			if dynamic.BooleanValue(fd.F.Tag.Get("default"), false) {
-				fd.DBValue = "1"
-			} else {
-				fd.DBValue = "0"
-			}
+			fd.IsObject = false
 		case reflect.String:
-			if length == 0 {
-				fd.DBType = "VARCHAR(64)"
-				fd.DBValue = fmt.Sprintf("'%s'", fd.F.Tag.Get("default"))
-			} else if length > 65535 {
-				fd.DBType = fmt.Sprintf("LONGTEXT(%d)", length)
-				fd.DBValue = ""
-			} else if length > 4096 {
-				fd.DBType = fmt.Sprintf("TEXT(%d)", length)
-				fd.DBValue = ""
-			} else if length == -1 {
-				fd.DBType = "TEXT"
-				fd.DBValue = ""
-			} else if length == -2 {
-				fd.DBType = "LONGTEXT"
-				fd.DBValue = ""
-			} else {
-				fd.DBType = fmt.Sprintf("VARCHAR(%d)", length)
-				fd.DBValue = fmt.Sprintf("'%s'", fd.F.Tag.Get("default"))
-			}
+			fd.IsObject = false
 		default:
-			fd.DBValue = ""
-			if length == 0 {
-				fd.DBType = "TEXT"
-			} else {
-				fd.DBType = fmt.Sprintf("TEXT(%d)", length)
-			}
 			fd.IsObject = true
-		}
-
-		if fd.DBValue != "" {
-			fd.DBValue = "DEFAULT " + fd.DBValue
 		}
 
 		if !fn(fd) {
