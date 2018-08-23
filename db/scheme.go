@@ -92,11 +92,16 @@ func InstallSQL(table interface{}, prefix string, autoIncrement int64, ver inter
 
 		var i int = 0
 
-		b.WriteString(fmt.Sprintf("--%s\r\n", tbtitle))
+		b.WriteString(fmt.Sprintf("#%s\r\n", tbtitle))
 		b.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS `%s` (", tbname))
 
-		b.WriteString("\r\n\tid BIGINT NOT NULL AUTO_INCREMENT")
-		b.WriteString("\t--ID\r\n")
+		b.WriteString("\r\n\tid BIGINT NOT NULL")
+
+		if autoIncrement != 0 {
+			b.WriteString(" AUTO_INCREMENT")
+		}
+
+		b.WriteString("\t#ID\r\n")
 
 		i += 1
 
@@ -122,7 +127,7 @@ func InstallSQL(table interface{}, prefix string, autoIncrement int64, ver inter
 			}
 
 			b.WriteString(fmt.Sprintf("`%s` %s", name, fieldSQLType(stype, length, defaultValue)))
-			b.WriteString(fmt.Sprintf("\t--[字段] %s\r\n", title))
+			b.WriteString(fmt.Sprintf("\t#[字段] %s\r\n", title))
 			i = i + 1
 
 			tb[name] = field
@@ -137,10 +142,10 @@ func InstallSQL(table interface{}, prefix string, autoIncrement int64, ver inter
 			index := dynamic.StringValue(dynamic.Get(field, "index"), "")
 			title := dynamic.StringValue(dynamic.Get(field, "title"), "")
 			b.WriteString(fmt.Sprintf("\t,INDEX `%s` (`%s` %s)", name, name, index))
-			b.WriteString(fmt.Sprintf("\t--[索引] %s\r\n", title))
+			b.WriteString(fmt.Sprintf("\t#[索引] %s\r\n", title))
 		}
 
-		if autoIncrement < 1 {
+		if autoIncrement == 0 {
 			b.WriteString(" ) ;\r\n")
 		} else {
 			b.WriteString(fmt.Sprintf(" ) AUTO_INCREMENT = %d;\r\n", autoIncrement))
@@ -165,16 +170,16 @@ func InstallSQL(table interface{}, prefix string, autoIncrement int64, ver inter
 
 			if fd == nil {
 				b.WriteString(fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s;", tbname, name, fieldSQLType(stype, length, defaultValue)))
-				b.WriteString(fmt.Sprintf("\t--[增加字段] %s\r\n", title))
+				b.WriteString(fmt.Sprintf("\t#[增加字段] %s\r\n", title))
 			} else if dynamic.StringValue(dynamic.Get(fd, "type"), "") != stype ||
 				dynamic.IntValue(dynamic.Get(fd, "length"), 0) != length {
 				b.WriteString(fmt.Sprintf("ALTER TABLE `%s` CHANGE `%s` `%s` %s;", tbname, name, name, fieldSQLType(stype, length, defaultValue)))
-				b.WriteString(fmt.Sprintf("\t--[修改字段] %s\r\n", title))
+				b.WriteString(fmt.Sprintf("\t#[修改字段] %s\r\n", title))
 			}
 
 			if index != "" && dynamic.StringValue(dynamic.Get(fd, "index"), "") == "" {
 				b.WriteString(fmt.Sprintf("CREATE INDEX `%s` ON `%s` (`%s` %s);", name, tbname, name, index))
-				b.WriteString(fmt.Sprintf("\t--[创建索引] %s\r\n", title))
+				b.WriteString(fmt.Sprintf("\t#[创建索引] %s\r\n", title))
 			}
 
 			tb[name] = field

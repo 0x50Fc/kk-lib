@@ -653,44 +653,74 @@ func BooleanValue(value interface{}, defaultValue bool) bool {
 
 }
 
-func SetValue(object interface{}, value interface{}) {
+func EachReflect(v reflect.Value, fn func(name string, value reflect.Value) bool) {
 
-	if object == nil {
-		return
+	if v.Kind() == reflect.Struct {
+
+		count := v.NumField()
+		tp := v.Type()
+
+		for i := 0; i < count; i++ {
+
+			tf := tp.Field(i)
+			fd := v.Field(i)
+
+			name := tf.Tag.Get("json")
+
+			if name == "-" {
+				continue
+			}
+
+			if tf.Type.Kind() == reflect.Struct {
+				EachReflect(fd, fn)
+				continue
+			}
+
+			if name == "" {
+				continue
+			}
+
+			name = strings.Split(name, ",")[0]
+
+			if !fn(name, fd) {
+				break
+			}
+
+		}
 	}
 
-	v := reflect.ValueOf(object)
+}
+
+func SetReflectValue(v reflect.Value, value interface{}) {
 
 	switch v.Kind() {
+	case reflect.String:
+		v.SetString(StringValue(value, ""))
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(IntValue(value, 0))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v.SetUint(UintValue(value, 0))
+	case reflect.Float32, reflect.Float64:
+		v.SetFloat(FloatValue(value, 0))
+	case reflect.Bool:
+		v.SetBool(BooleanValue(value, false))
 	case reflect.Ptr:
 		switch v.Type().Elem().Kind() {
-		case reflect.String:
-			v.SetString(StringValue(value, ""))
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			v.SetInt(IntValue(value, 0))
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			v.SetUint(UintValue(value, 0))
-		case reflect.Float32, reflect.Float64:
-			v.SetFloat(FloatValue(value, 0))
-		case reflect.Bool:
-			v.SetBool(BooleanValue(value, false))
-		case reflect.Map:
-			if v.IsNil() {
-				v.Set(reflect.MakeMap(v.Type().Elem()))
-			}
-			SetValue(v.Elem().Interface(), value)
 		case reflect.Struct:
 			if v.IsNil() {
 				v.Set(reflect.New(v.Type().Elem()))
 			}
-			Each(value, func(key interface{}, value interface{}) bool {
-				name := StringValue(key, "")
-				vval := v.Elem().FieldByName(name)
-				if vval.IsValid() {
-					SetValue(vval.Addr().Interface(), value)
+
+			EachReflect(v.Elem(), func(name string, v reflect.Value) bool {
+
+				if v.IsValid() {
+					SetReflectValue(v, Get(value, name))
 				}
+
 				return true
 			})
+		default:
+			SetReflectValue(v.Elem(), value)
 		}
 	case reflect.Map:
 		Each(value, func(key interface{}, value interface{}) bool {
@@ -730,6 +760,18 @@ func SetValue(object interface{}, value interface{}) {
 			return true
 		})
 	}
+
+}
+
+func SetValue(object interface{}, value interface{}) {
+
+	if object == nil {
+		return
+	}
+
+	v := reflect.ValueOf(object)
+
+	SetReflectValue(v, value)
 }
 
 func AddValue(object interface{}, value interface{}) {

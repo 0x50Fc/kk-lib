@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 )
 
@@ -155,7 +154,7 @@ func UpdateWithKeys(db Database, object IObject, prefix string, keys map[string]
 
 	n += 1
 
-	log.Printf("%s %s\n", s.String(), fs)
+	// log.Printf("%s %s\n", s.String(), fs)
 
 	return db.Exec(s.String(), fs...)
 }
@@ -172,7 +171,7 @@ func Insert(db Database, object IObject, prefix string) (sql.Result, error) {
 
 	Each(object, func(field Field) bool {
 
-		if field.Name == "id" {
+		if field.Name == "id" && object.GetId() == 0 {
 			return true
 		}
 
@@ -200,11 +199,11 @@ func Insert(db Database, object IObject, prefix string) (sql.Result, error) {
 
 	s.Write(w.Bytes())
 
-	log.Printf("%s %s\n", s.String(), fs)
+	// log.Printf("%s %s\n", s.String(), fs)
 
 	var rs, err = db.Exec(s.String(), fs...)
 
-	if err == nil {
+	if err == nil && object.GetId() == 0 {
 		id, err := rs.LastInsertId()
 		if err == nil {
 			object.SetId(id)
