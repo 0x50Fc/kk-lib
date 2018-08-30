@@ -759,6 +759,10 @@ func SetReflectValue(v reflect.Value, value interface{}) {
 			}
 			return true
 		})
+	case reflect.Interface:
+		if v.IsValid() {
+			v.Set(reflect.ValueOf(value))
+		}
 	}
 
 }

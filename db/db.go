@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	"github.com/hailongz/kk-lib/dynamic"
 )
 
 type Database interface {
@@ -213,22 +215,26 @@ func Insert(db Database, object IObject, prefix string) (sql.Result, error) {
 	return rs, err
 }
 
-type Value struct {
-	String  string
-	Int64   int64
-	Double  float64
-	Boolean bool
+type booleanValue struct {
+	v        reflect.Value
+	intValue int
+}
+
+type jsonValue struct {
+	v         reflect.Value
+	byteValue interface{}
 }
 
 type Scaner struct {
-	object      IObject
-	fields      []interface{}
-	nilValue    interface{}
-	jsonObjects []reflect.Value
+	object        IObject
+	fields        []interface{}
+	jsonObjects   []*jsonValue
+	nilValue      interface{}
+	booleanValues []*booleanValue
 }
 
 func NewScaner(object IObject) *Scaner {
-	return &Scaner{object, nil, "", nil}
+	return &Scaner{object, nil, nil, nil, nil}
 }
 
 func (o *Scaner) Scan(rows *sql.Rows) error {
@@ -248,7 +254,8 @@ func (o *Scaner) Scan(rows *sql.Rows) error {
 			mi[columns[i]] = i
 		}
 
-		o.jsonObjects = []reflect.Value{}
+		o.booleanValues = []*booleanValue{}
+		o.jsonObjects = []*jsonValue{}
 		o.fields = make([]interface{}, fdc)
 
 		for i := 0; i < fdc; i += 1 {
@@ -260,9 +267,20 @@ func (o *Scaner) Scan(rows *sql.Rows) error {
 			idx, ok := mi[field.Name]
 
 			if ok {
-				o.fields[idx] = field.V.Addr().Interface()
-				if field.IsObject {
-					o.jsonObjects = append(o.jsonObjects, field.V)
+				if field.F.Type.Kind() == reflect.Bool {
+					b := booleanValue{}
+					b.v = field.V
+					b.intValue = 0
+					o.fields[idx] = &b.intValue
+					o.booleanValues = append(o.booleanValues, &b)
+				} else if field.IsObject {
+					b := jsonValue{}
+					b.v = field.V
+					b.byteValue = nil
+					o.fields[idx] = &b.byteValue
+					o.jsonObjects = append(o.jsonObjects, &b)
+				} else {
+					o.fields[idx] = field.V.Addr().Interface()
 				}
 			}
 
@@ -279,32 +297,32 @@ func (o *Scaner) Scan(rows *sql.Rows) error {
 
 	for _, fd := range o.jsonObjects {
 
-		v := fd.Addr().Interface().(*interface{})
-
-		if *v == nil {
+		if fd.byteValue == nil {
+			dynamic.SetReflectValue(fd.v, nil)
 			continue
 		}
 
 		{
-			b, ok := (*v).([]byte)
+			b, ok := (fd.byteValue).([]byte)
 			if ok {
-				*v = nil
-				_ = json.Unmarshal(b, v)
+				_ = json.Unmarshal(b, fd.v.Addr().Interface())
 				continue
 			}
 		}
 
 		{
-			s, ok := (*v).(string)
+			s, ok := (fd.byteValue).(string)
 			if ok {
-				*v = nil
-				_ = json.Unmarshal([]byte(s), v)
+				_ = json.Unmarshal([]byte(s), fd.v.Addr().Interface())
 				continue
 			}
 		}
 
-		*v = nil
+		dynamic.SetReflectValue(fd.v, nil)
+	}
 
+	for _, fd := range o.booleanValues {
+		dynamic.SetReflectValue(fd.v, fd.intValue != 0)
 	}
 
 	return nil

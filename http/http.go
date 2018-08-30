@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/hailongz/kk-lib/dynamic"
+	"github.com/hailongz/kk-lib/json"
 )
 
 const OptionTypeUrlencode = "application/x-www-form-urlencoded"
@@ -39,6 +39,10 @@ var ca *x509.CertPool
 func init() {
 	ca = x509.NewCertPool()
 	ca.AppendCertsFromPEM(pemCerts)
+}
+
+func CA() *x509.CertPool {
+	return ca
 }
 
 func NewClient() *xhttp.Client {
