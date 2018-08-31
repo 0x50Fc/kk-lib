@@ -27,7 +27,7 @@ func encodeObject(v reflect.Value, w *bytes.Buffer, idx int) (int, error) {
 			}
 
 			if fv.CanInterface() {
-				if len(tags) > 1 && tags[1] == "omitempty" && dynamic.IsEmpty(fv.Interface()) {
+				if len(tags) > 1 && tags[1] == "omitempty" && dynamic.IsNil(fv.Interface()) {
 					continue
 				}
 

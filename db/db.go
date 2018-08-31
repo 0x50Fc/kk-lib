@@ -49,6 +49,27 @@ func (O *Object) SetId(id int64) {
 	O.Id = id
 }
 
+func TableName(prefix string, object IObject) string {
+	return prefix + object.GetName()
+}
+
+func Transaction(db *sql.DB, fn func(conn Database) error) error {
+
+	tx, err := db.Begin()
+
+	err = fn(tx)
+
+	if err == nil {
+		err = tx.Commit()
+	}
+
+	if err != nil {
+		tx.Rollback()
+	}
+
+	return err
+}
+
 func Query(db Database, object IObject, prefix string, sql string, args ...interface{}) (*sql.Rows, error) {
 	var tbname = prefix + object.GetName()
 	return db.Query(fmt.Sprintf("SELECT * FROM `%s` %s", tbname, sql), args...)

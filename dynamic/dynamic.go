@@ -290,6 +290,32 @@ func Each(object interface{}, fn func(key interface{}, value interface{}) bool) 
 
 }
 
+func IsNil(object interface{}) bool {
+
+	if object == nil {
+		return true
+	}
+
+	v := reflect.ValueOf(object)
+
+	switch v.Kind() {
+	case reflect.String:
+		return v.String() == ""
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.Bool:
+		return v.Bool() == false
+	case reflect.Ptr:
+		return v.IsNil()
+	}
+
+	return false
+}
+
 func IsEmpty(object interface{}) bool {
 
 	if object == nil {
@@ -760,8 +786,10 @@ func SetReflectValue(v reflect.Value, value interface{}) {
 			return true
 		})
 	case reflect.Interface:
-		if v.IsValid() {
-			v.Set(reflect.ValueOf(value))
+		if v.IsValid() && v.CanSet() {
+			if value != nil {
+				v.Set(reflect.ValueOf(value))
+			}
 		}
 	}
 
