@@ -271,20 +271,20 @@ func Each(object interface{}, fn func(key interface{}, value interface{}) bool) 
 				}
 			}
 		case reflect.Ptr:
-			switch v.Type().Elem().Kind() {
-			case reflect.Struct:
-				t := v.Type().Elem()
-				for i := 0; i < t.NumField(); i++ {
-					fd := t.Field(i)
-					fdv := v.Elem().Field(i)
-					if fdv.CanInterface() {
-						if !fn(fd.Name, fdv.Interface()) {
-							break
-						}
-					}
+			if !v.IsNil() {
+				switch v.Type().Elem().Kind() {
+				case reflect.Struct:
+					EachReflect(v.Elem(), func(name string, value reflect.Value) bool {
 
+						if value.CanInterface() {
+							return fn(name, value.Interface())
+						}
+
+						return true
+					})
 				}
 			}
+
 		}
 	}
 
