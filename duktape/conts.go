@@ -53,12 +53,14 @@ const (
 )
 
 const (
-	EnumIncludeNonenumerable uint = 1 << iota
-	EnumIncludeInternal
-	EnumOwnPropertiesOnly
-	EnumArrayIndicesOnly
-	EnumSortArrayIndices
-	NoProxyBehavior
+	DUK_ENUM_INCLUDE_NONENUMERABLE uint = 1 << iota
+	DUK_ENUM_INCLUDE_HIDDEN
+	DUK_ENUM_INCLUDE_SYMBOLS
+	DUK_ENUM_EXCLUDE_STRINGS
+	DUK_ENUM_OWN_PROPERTIES_ONLY
+	DUK_ENUM_ARRAY_INDICES_ONLY
+	DUK_ENUM_SORT_ARRAY_INDICES
+	DUK_ENUM_NO_PROXY_BEHAVIOR
 )
 
 const (
