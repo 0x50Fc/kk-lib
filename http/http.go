@@ -35,10 +35,17 @@ type Options struct {
 }
 
 var ca *x509.CertPool
+var client *xhttp.Client
 
 func init() {
 	ca = x509.NewCertPool()
 	ca.AppendCertsFromPEM(pemCerts)
+	client = &xhttp.Client{
+		Transport: &xhttp.Transport{
+			TLSClientConfig:   &tls.Config{RootCAs: ca},
+			DisableKeepAlives: false,
+		},
+	}
 }
 
 func CA() *x509.CertPool {
@@ -55,13 +62,6 @@ func NewClient() *xhttp.Client {
 }
 
 func Send(options *Options) (interface{}, error) {
-
-	client := &xhttp.Client{
-		Transport: &xhttp.Transport{
-			TLSClientConfig:   &tls.Config{RootCAs: ca},
-			DisableKeepAlives: false,
-		},
-	}
 
 	var url = options.Url
 	var resp *xhttp.Response
