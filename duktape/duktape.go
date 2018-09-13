@@ -68,6 +68,13 @@ func (d *Context) Recycle() {
 	C.duk_destroy_heap(d.duk_context)
 }
 
+func (d *Context) PushGlobalGoFunction(key string, fn func() int) {
+	d.PushGlobalObject()
+	d.PushGoFunction(fn)
+	d.PutPropString(-2, key)
+	d.Pop()
+}
+
 func (d *Context) PushGoFunction(fn func() int) {
 	s := d.s
 	id := s.Add(fn)
