@@ -21,32 +21,43 @@ import (
 )
 
 type scope struct {
-	autoId int
-	funcs  map[int]func() int
+	autoId  int
+	objects map[int]interface{}
 }
 
 func newScope() *scope {
 	v := scope{}
 	v.autoId = 0
-	v.funcs = map[int]func() int{}
+	v.objects = map[int]interface{}{}
 	return &v
 }
 
-func (s *scope) Add(fn func() int) int {
+func (s *scope) Add(object interface{}) int {
 	id := s.autoId + 1
 	s.autoId = id
-	s.funcs[id] = fn
+	s.objects[id] = object
 	return id
 }
 
 func (s *scope) Remove(id int) {
-	delete(s.funcs, id)
+	delete(s.objects, id)
 }
 
 func (s *scope) Call(id int) int {
-	fn, ok := s.funcs[id]
+	v, ok := s.objects[id]
 	if ok {
-		return fn()
+		fn, ok := v.(func() int)
+		if ok {
+			return fn()
+		}
+	}
+	return 0
+}
+
+func (s *scope) Get(id int) interface{} {
+	v, ok := s.objects[id]
+	if ok {
+		return v
 	}
 	return 0
 }
@@ -89,9 +100,38 @@ func (d *Context) PushGoFunction(fn func() int) {
 
 }
 
+func (d *Context) PushGoObject(object interface{}) {
+	s := d.s
+	id := s.Add(object)
+
+	C.duk_push_object(d.duk_context)
+
+	setScope(d.duk_context, -1, s)
+	setFunctionId(d.duk_context, -1, id)
+
+	C.duk_push_c_function(d.duk_context, (*[0]byte)(C.goFinalizeCall), C.duk_idx_t(1))
+	C.duk_set_finalizer(d.duk_context, C.duk_idx_t(-2))
+
+}
+
+func (d *Context) ToGoObject(idx int) interface{} {
+	if d.IsObject(idx) {
+		s := getScope(d.duk_context, idx)
+		if s != nil {
+			id := getFunctionId(d.duk_context, idx)
+			if id != 0 {
+				return s.Get(id)
+			}
+		}
+	}
+	return nil
+}
+
 func setScope(ctx *C.struct_duk_hthread, idx int, s *scope) {
 
 	key := C.CString("__scope")
+
+	C.duk_push_string(ctx, key)
 
 	ptr := unsafe.Pointer(s)
 
@@ -99,7 +139,7 @@ func setScope(ctx *C.struct_duk_hthread, idx int, s *scope) {
 
 	p.ptr = ptr
 
-	C.duk_put_prop_string(ctx, C.duk_idx_t(idx-1), key)
+	C.duk_def_prop(ctx, C.duk_idx_t(idx-2), C.DUK_DEFPROP_HAVE_VALUE|C.DUK_DEFPROP_HAVE_CONFIGURABLE|C.DUK_DEFPROP_HAVE_ENUMERABLE)
 
 	C.free(unsafe.Pointer(key))
 }
@@ -108,8 +148,9 @@ func setFunctionId(ctx *C.struct_duk_hthread, idx int, id int) {
 
 	key := C.CString("__id")
 
+	C.duk_push_string(ctx, key)
 	C.duk_push_int(ctx, C.duk_int_t(id))
-	C.duk_put_prop_string(ctx, C.duk_idx_t(idx-1), key)
+	C.duk_def_prop(ctx, C.duk_idx_t(idx-2), C.DUK_DEFPROP_HAVE_VALUE|C.DUK_DEFPROP_HAVE_CONFIGURABLE|C.DUK_DEFPROP_HAVE_ENUMERABLE)
 
 	C.free(unsafe.Pointer(key))
 }
