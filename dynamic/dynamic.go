@@ -791,6 +791,24 @@ func SetReflectValue(v reflect.Value, value interface{}) {
 				v.Set(reflect.ValueOf(value))
 			}
 		}
+	case reflect.Slice:
+		if v.IsValid() && v.CanSet() {
+
+			vv := reflect.New(v.Type()).Elem()
+
+			Each(value, func(key interface{}, value interface{}) bool {
+
+				item := reflect.New(v.Type().Elem())
+
+				SetReflectValue(item, value)
+
+				vv = reflect.Append(vv, item.Elem())
+
+				return true
+			})
+
+			v.Set(vv)
+		}
 	}
 
 }
